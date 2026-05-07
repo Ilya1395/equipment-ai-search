@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from html import escape
 
 import pandas as pd
 import streamlit as st
@@ -25,7 +26,20 @@ st.markdown("""
     [data-testid="stHeader"] {
         background: rgba(223, 246, 255, 0.75);
     }
-    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stSlider, textarea {
+    .stTextInput input, .stSelectbox div[data-baseweb="select"], textarea {
+        background-color: #eaf8ff !important;
+        color: #ffffff !important;
+        border: 1px solid #c9ecff !important;
+        border-radius: 10px !important;
+    }
+    .stTextInput input::placeholder, textarea::placeholder {
+        color: rgba(255, 255, 255, 0.78) !important;
+    }
+    .stSelectbox div[data-baseweb="select"] span,
+    .stSelectbox div[data-baseweb="select"] div {
+        color: #ffffff !important;
+    }
+    .stSlider {
         color: #0b3d91;
     }
     .stButton > button, .stDownloadButton > button {
@@ -40,10 +54,34 @@ st.markdown("""
         color: #002f6c;
         border-color: #ff7f7f;
     }
-    div[data-testid="stDataFrame"] {
-        background-color: rgba(255, 255, 255, 0.7);
+    div[data-testid="stDataFrame"], .result-table-wrap {
+        background-color: rgba(255, 255, 255, 0.72);
         border-radius: 12px;
-        padding: 6px;
+        padding: 8px;
+    }
+    .result-table {
+        width: 100%;
+        border-collapse: collapse;
+        color: #0b3d91;
+        font-size: 0.94rem;
+    }
+    .result-table th {
+        background-color: #c7e7ff;
+        color: #073b7a;
+        text-align: left;
+        padding: 8px;
+        border: 1px solid #9fd3ff;
+    }
+    .result-table td {
+        padding: 8px;
+        border: 1px solid #b9dfff;
+        background-color: rgba(234, 248, 255, 0.9);
+        color: #0b3d91;
+    }
+    .result-table a {
+        color: #2f7ed8;
+        font-weight: 700;
+        text-decoration: underline;
     }
     .main-title-small {
         font-size: 1.55rem;
@@ -72,8 +110,22 @@ def dataframe_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
         for column_cells in worksheet.columns:
             max_length = max(len(str(cell.value or "")) for cell in column_cells)
             column_letter = column_cells[0].column_letter
-            worksheet.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 45)
+            worksheet.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 55)
     return buffer.getvalue()
+
+
+def make_source_link(title: str, url: str) -> str:
+    """HTML-ссылка для отображения источника в итоговой таблице."""
+    safe_title = escape((title or url or "Источник").strip())
+    safe_url = escape((url or "").strip(), quote=True)
+    if not safe_url:
+        return safe_title
+    return f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_title}</a>'
+
+
+def render_html_table(df: pd.DataFrame) -> None:
+    html_table = df.to_html(index=False, escape=False, classes="result-table")
+    st.markdown(f'<div class="result-table-wrap">{html_table}</div>', unsafe_allow_html=True)
 
 
 with st.sidebar:
@@ -129,7 +181,7 @@ if run:
         st.stop()
 
     with st.status("Ищу открытые источники и извлекаю характеристики...", expanded=True) as status:
-        st.write(f"1. Выполняю поиск через {search_engine_label} с задержкой 2 секунды между запросами.")
+        st.write(f"1. Ищу сочетание: {field_1.strip()} + {field_2.strip()} + {code.strip()} через {search_engine_label}.")
         sources = collect_sources(code, field_1, field_2, max_sources=max_sources, search_engine=selected_search_engine)
 
         if not sources:
@@ -137,15 +189,15 @@ if run:
             st.warning("Не удалось найти доступные источники. Попробуйте выбрать другой поисковик, убрать лишние слова из классификации или проверить код модели.")
             st.stop()
 
-        st.write(f"2. Найдено источников: {len(sources)}.")
-        st.write(f"3. Передаю найденный текст в нейросеть: {selected_model}.")
+        st.write(f"2. Открыто и отобрано источников, где найден код модели: {len(sources)}.")
+        st.write(f"3. Последовательно извлекаю характеристики по каждому источнику через нейросеть: {selected_model}.")
 
         hf_token = st.secrets.get("HF_TOKEN", None) if hasattr(st, "secrets") else None
         rows = extract_with_hf_llm(sources, code, hf_token=hf_token, model=selected_model)
 
         if not rows:
             st.write("4. LLM недоступна или не вернула JSON. Использую резервное извлечение по шаблонам.")
-            rows = extract_with_regex(sources)
+            rows = extract_with_regex(sources, code)
         else:
             st.write("4. Характеристики получены от LLM.")
 
@@ -154,8 +206,18 @@ if run:
     if not rows:
         st.warning("Характеристики не найдены. Попробуйте увеличить число источников или уточнить код модели.")
     else:
-        table_rows = [
-            {
+        display_rows = []
+        download_rows = []
+        for r in rows:
+            source_title = r.get("source_title", "") or "Источник"
+            source_url = r.get("source_url", "")
+            source_label = source_title
+            for source in sources:
+                if source.get("url") == source_url:
+                    source_label = source.get("site_name") or source_title
+                    break
+
+            common = {
                 "Класс": field_1.strip(),
                 "Подкласс": field_2.strip(),
                 "Код модели": code.strip(),
@@ -163,15 +225,17 @@ if run:
                 "Значение": r.get("value", ""),
                 "Ед. изм.": r.get("unit", ""),
             }
-            for r in rows
-        ]
-        df = pd.DataFrame(table_rows)
+            display_rows.append({**common, "Источник": make_source_link(source_label, source_url)})
+            download_rows.append({**common, "Источник": f"{source_label} - {source_url}" if source_url else source_label})
+
+        df_display = pd.DataFrame(display_rows)
+        df_download = pd.DataFrame(download_rows)
         st.subheader("Таблица характеристик")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        render_html_table(df_display)
 
         safe_code = code.strip().replace(" ", "_").replace("/", "_")
-        csv = df.to_csv(index=False, sep=";").encode("utf-8-sig")
-        xlsx = dataframe_to_xlsx_bytes(df)
+        csv = df_download.to_csv(index=False, sep=";").encode("utf-8-sig")
+        xlsx = dataframe_to_xlsx_bytes(df_download)
 
         dl_col1, dl_col2 = st.columns(2)
         with dl_col1:

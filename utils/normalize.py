@@ -54,17 +54,28 @@ def clean_value(value: str) -> str:
 
 
 def deduplicate(rows: list[dict]) -> list[dict]:
+    """Удаляет дубли, сохраняя источник, если он был найден."""
     seen = set()
     out = []
     for row in rows:
         char = str(row.get("characteristic", "")).strip()
         val = clean_value(row.get("value", ""))
         unit = normalize_unit(str(row.get("unit", "")))
+        source_title = str(row.get("source_title", "")).strip()
+        source_url = str(row.get("source_url", "")).strip()
         if not char or not val:
             continue
-        key = (char.lower(), val.lower(), unit.lower())
+        key = (char.lower(), val.lower(), unit.lower(), source_url.lower())
         if key in seen:
             continue
         seen.add(key)
-        out.append({"characteristic": char, "value": val, "unit": unit})
+        out.append(
+            {
+                "characteristic": char,
+                "value": val,
+                "unit": unit,
+                "source_title": source_title,
+                "source_url": source_url,
+            }
+        )
     return out

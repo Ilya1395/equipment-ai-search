@@ -23,18 +23,14 @@ SEARCH_ENGINE_LABELS = {
 }
 
 SEARCH_ENDPOINTS: dict[str, list[str]] = {
-    "google": [
-        "https://www.google.com/search",
-    ],
+    "google": ["https://www.google.com/search"],
     "yandex": [
         "https://ya.ru/search/",
         "https://yandex.ru/search/",
         "https://ya.ru/search/touch/",
         "https://yandex.ru/search/touch/",
     ],
-    "yahoo": [
-        "https://search.yahoo.com/search",
-    ],
+    "yahoo": ["https://search.yahoo.com/search"],
 }
 
 HEADERS = {
@@ -76,6 +72,9 @@ BAD_EXTENSIONS = (
     ".css",
     ".js",
     ".ico",
+    ".zip",
+    ".rar",
+    ".7z",
 )
 
 
@@ -87,15 +86,15 @@ class SearchResult:
 
 
 def build_queries(code: str, class_name: str, subclass_name: str) -> list[str]:
+    """Главный запрос строго строится как Класс + Подкласс + Код модели."""
     clean_code = code.strip()
     cls = class_name.strip()
     subcls = subclass_name.strip()
     return [
-        f'"{clean_code}" характеристики {cls} {subcls}',
+        f"{cls} {subcls} {clean_code}",
+        f'"{cls}" "{subcls}" "{clean_code}"',
+        f"{cls} {subcls} {clean_code} характеристики",
         f'"{clean_code}" технические характеристики',
-        f'"{clean_code}" паспорт инструкция pdf',
-        f'"{clean_code}" каталог {cls}',
-        f'{clean_code} {cls} {subcls} производительность мощность масса',
     ]
 
 
@@ -113,10 +112,10 @@ def _looks_like_bad_resource(url: str) -> bool:
     return path.endswith(BAD_EXTENSIONS)
 
 
-def _extract_target_from_query(parsed) -> str:
-    params = parse_qs(parsed.query)
-    for key in ("url", "u", "target", "to", "href", "source", "uddg"):
-        values = params.get(key)
+def _extract_target_from_query(parsed_url) -> str:
+    query = parse_qs(parsed_url.query)
+    for key in ("url", "u", "target", "to", "r", "redirect", "img_url"):
+        values = query.get(key)
         if not values:
             continue
         candidate = unquote(values[0])
@@ -128,8 +127,7 @@ def _extract_target_from_query(parsed) -> str:
 def _extract_google_url(href: str) -> str:
     parsed = urlparse(href)
     if parsed.path == "/url":
-        params = parse_qs(parsed.query)
-        values = params.get("q") or params.get("url")
+        values = parse_qs(parsed.query).get("q")
         if values and values[0].startswith(("http://", "https://")):
             return values[0]
     return ""
@@ -263,7 +261,7 @@ def web_search(queries: Iterable[str], max_results: int = 8, search_engine: Sear
     return results[:max_results]
 
 
-def fetch_page_text(url: str, timeout: int = PAGE_TIMEOUT_SECONDS, max_chars: int = 14000) -> str:
+def fetch_page_text(url: str, timeout: int = PAGE_TIMEOUT_SECONDS, max_chars: int = 18000) -> str:
     time.sleep(REQUEST_DELAY_SECONDS)
 
     try:
@@ -281,13 +279,24 @@ def fetch_page_text(url: str, timeout: int = PAGE_TIMEOUT_SECONDS, max_chars: in
         tag.decompose()
 
     parts: list[str] = []
-    for element in soup.find_all(["h1", "h2", "h3", "p", "li", "td", "th", "span"]):
+    for element in soup.find_all(["h1", "h2", "h3", "p", "li", "td", "th", "span", "div"]):
         text = _clean_text(element.get_text(" ", strip=True))
         if len(text) >= 3:
             parts.append(text)
 
     text = "\n".join(parts)
     return text[:max_chars]
+
+
+def _contains_code(text: str, code: str) -> bool:
+    normalized_text = re.sub(r"\s+", "", (text or "").lower())
+    normalized_code = re.sub(r"\s+", "", (code or "").lower())
+    return bool(normalized_code and normalized_code in normalized_text)
+
+
+def _host_name(url: str) -> str:
+    host = urlparse(url).netloc.lower().replace("www.", "")
+    return host or url
 
 
 def collect_sources(
@@ -297,6 +306,13 @@ def collect_sources(
     max_sources: int = 6,
     search_engine: SearchEngine = "yandex",
 ) -> list[dict]:
+    """
+    Алгоритм:
+    1. Ищет в выбранном поисковике сочетание Класс + Подкласс + Код модели.
+    2. Заходит поочередно на найденные сайты.
+    3. Оставляет для анализа страницы, где найден код модели в тексте, заголовке или сниппете.
+    4. Возвращает текст страницы и данные источника для заполнения итоговой таблицы.
+    """
     results = web_search(
         build_queries(code, class_name, subclass_name),
         max_results=max_sources,
@@ -307,7 +323,18 @@ def collect_sources(
     for result in results:
         page_text = fetch_page_text(result.href)
         combined = "\n".join([result.title, result.body, page_text]).strip()
-        if combined:
-            sources.append({"title": result.title, "url": result.href, "text": combined})
+        if not combined:
+            continue
+        if not _contains_code(combined, code):
+            continue
+        sources.append(
+            {
+                "title": result.title or _host_name(result.href),
+                "site_name": _host_name(result.href),
+                "url": result.href,
+                "snippet": result.body,
+                "text": combined,
+            }
+        )
 
     return sources

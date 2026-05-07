@@ -21,10 +21,10 @@ MODEL_OPTIONS = {
 DEFAULT_MODEL = MODEL_OPTIONS["Qwen 2.5 7B Instruct"]
 
 SYSTEM_INSTRUCTION = """
-Ты извлекаешь технические характеристики оборудования из текста открытых источников.
+Ты извлекаешь технические характеристики оборудования из текста одного открытого источника.
 Верни только JSON-массив объектов без пояснений.
 Каждый объект: {"characteristic":"название характеристики", "value":"значение", "unit":"единица измерения"}.
-Не выдумывай. Извлекай только то, что прямо указано в источниках.
+Не выдумывай. Извлекай только то, что прямо указано в тексте источника рядом с указанным кодом модели.
 Если значение или единица не указаны, оставь пустую строку.
 Единицы измерения сокращай: кг, т, кВт, Вт, В, А, Гц, м, мм, м3/ч, м3/мин, л/с, об/мин, МПа, бар, °C.
 Если в источнике указана единица м³/ч, верни м3/ч.
@@ -45,52 +45,75 @@ def _extract_json_array(text: str) -> list[dict[str, Any]]:
     return [x for x in data if isinstance(x, dict)]
 
 
-def extract_with_hf_llm(
-    sources: list[dict],
-    code: str,
-    hf_token: str | None = None,
-    model: str | None = None,
-) -> list[dict]:
-    token = hf_token or os.getenv("HF_TOKEN")
-    model_id = model or os.getenv("HF_MODEL") or DEFAULT_MODEL
-    if not token:
-        return []
+def _source_contains_code(source_text: str, code: str) -> bool:
+    normalized_text = re.sub(r"\s+", "", (source_text or "").lower())
+    normalized_code = re.sub(r"\s+", "", (code or "").lower())
+    return bool(normalized_code and normalized_code in normalized_text)
 
-    source_text = "\n\n".join(
-        f"Источник: {s.get('title', '')}\nURL: {s.get('url', '')}\nТекст:\n{s.get('text', '')[:7000]}"
-        for s in sources[:5]
-    )[:26000]
 
+def _extract_one_source_with_hf(client: InferenceClient, source: dict, code: str) -> list[dict]:
+    source_text = source.get("text", "")[:12000]
     prompt = f"""
 {SYSTEM_INSTRUCTION}
 
-Модель оборудования: {code}
+Код модели: {code}
+Название источника: {source.get('title', '')}
+URL источника: {source.get('url', '')}
 
-Текст источников:
+Текст источника:
 {source_text}
 
 JSON:
 """.strip()
 
     try:
-        client = InferenceClient(model=model_id, token=token)
         response = client.chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_INSTRUCTION},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=1000,
+            max_tokens=900,
             temperature=0.0,
         )
         content = response.choices[0].message.content or ""
     except Exception:
-        try:
-            client = InferenceClient(model=model_id, token=token)
-            content = client.text_generation(prompt, max_new_tokens=1000, temperature=0.01)
-        except Exception:
-            return []
+        content = client.text_generation(prompt, max_new_tokens=900, temperature=0.01)
 
-    return deduplicate(_extract_json_array(content))
+    rows = _extract_json_array(content)
+    for row in rows:
+        row["source_title"] = source.get("title", "")
+        row["source_url"] = source.get("url", "")
+    return rows
+
+
+def extract_with_hf_llm(
+    sources: list[dict],
+    code: str,
+    hf_token: str | None = None,
+    model: str | None = None,
+) -> list[dict]:
+    """Извлекает характеристики отдельно по каждому найденному сайту, чтобы сохранить источник."""
+    token = hf_token or os.getenv("HF_TOKEN")
+    model_id = model or os.getenv("HF_MODEL") or DEFAULT_MODEL
+    if not token:
+        return []
+
+    try:
+        client = InferenceClient(model=model_id, token=token)
+    except Exception:
+        return []
+
+    all_rows: list[dict] = []
+    for source in sources:
+        text = source.get("text", "")
+        if not _source_contains_code(text, code):
+            continue
+        try:
+            all_rows.extend(_extract_one_source_with_hf(client, source, code))
+        except Exception:
+            continue
+
+    return deduplicate(all_rows)
 
 
 COMMON_PATTERNS = [
@@ -106,16 +129,22 @@ COMMON_PATTERNS = [
 ]
 
 
-def extract_with_regex(sources: list[dict]) -> list[dict]:
-    text = "\n".join(s.get("text", "") for s in sources).lower()
+def extract_with_regex(sources: list[dict], code: str | None = None) -> list[dict]:
     rows = []
-    for pattern in COMMON_PATTERNS:
-        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            rows.append(
-                {
-                    "characteristic": match.group("name").strip().capitalize(),
-                    "value": match.group("value").strip(),
-                    "unit": match.group("unit").strip(),
-                }
-            )
+    for source in sources:
+        text = source.get("text", "")
+        if code and not _source_contains_code(text, code):
+            continue
+        lower_text = text.lower()
+        for pattern in COMMON_PATTERNS:
+            for match in re.finditer(pattern, lower_text, flags=re.IGNORECASE):
+                rows.append(
+                    {
+                        "characteristic": match.group("name").strip().capitalize(),
+                        "value": match.group("value").strip(),
+                        "unit": match.group("unit").strip(),
+                        "source_title": source.get("title", ""),
+                        "source_url": source.get("url", ""),
+                    }
+                )
     return deduplicate(rows)
