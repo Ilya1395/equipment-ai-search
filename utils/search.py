@@ -5,7 +5,7 @@ from typing import Iterable
 
 import requests
 from bs4 import BeautifulSoup
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 
 
 HEADERS = {
