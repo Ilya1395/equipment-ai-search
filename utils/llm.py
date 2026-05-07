@@ -105,9 +105,9 @@ def extract_with_hf_llm(
 
     all_rows: list[dict] = []
     for source in sources:
-        text = source.get("text", "")
-        if not _source_contains_code(text, code):
-            continue
+        # Источник уже найден поисковиком по сочетанию Класс + Подкласс + Код модели.
+        # Код может отсутствовать в доступном HTML из-за защиты сайта, карточек товара, PDF или динамической загрузки.
+        # Поэтому не отбрасываем источник на этом этапе, а просим LLM извлечь только явно указанные характеристики.
         try:
             all_rows.extend(_extract_one_source_with_hf(client, source, code))
         except Exception:
@@ -133,8 +133,6 @@ def extract_with_regex(sources: list[dict], code: str | None = None) -> list[dic
     rows = []
     for source in sources:
         text = source.get("text", "")
-        if code and not _source_contains_code(text, code):
-            continue
         lower_text = text.lower()
         for pattern in COMMON_PATTERNS:
             for match in re.finditer(pattern, lower_text, flags=re.IGNORECASE):

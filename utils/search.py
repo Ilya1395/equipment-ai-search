@@ -310,12 +310,14 @@ def collect_sources(
     Алгоритм:
     1. Ищет в выбранном поисковике сочетание Класс + Подкласс + Код модели.
     2. Заходит поочередно на найденные сайты.
-    3. Оставляет для анализа страницы, где найден код модели в тексте, заголовке или сниппете.
-    4. Возвращает текст страницы и данные источника для заполнения итоговой таблицы.
+    3. Анализирует текст страницы; если страница закрыта, использует заголовок и сниппет выдачи.
+    4. Не отбрасывает источник полностью, если код модели не удалось подтвердить в HTML: это снижает риск ошибки
+       "Не удалось найти доступные источники" из-за защиты поисковика или сайта.
+    5. Возвращает источники для последовательного извлечения характеристик.
     """
     results = web_search(
         build_queries(code, class_name, subclass_name),
-        max_results=max_sources,
+        max_results=max(max_sources, min(max_sources * 2, 100)),
         search_engine=search_engine,
     )
     sources: list[dict] = []
@@ -325,8 +327,11 @@ def collect_sources(
         combined = "\n".join([result.title, result.body, page_text]).strip()
         if not combined:
             continue
-        if not _contains_code(combined, code):
-            continue
+
+        code_confirmed = _contains_code(combined, code)
+        page_available = bool(page_text and not page_text.startswith("PDF-документ найден"))
+        source_note = "Код модели найден на странице или в сниппете" if code_confirmed else "Источник найден по поисковому запросу; код модели не подтвержден в доступном HTML"
+
         sources.append(
             {
                 "title": result.title or _host_name(result.href),
@@ -334,7 +339,13 @@ def collect_sources(
                 "url": result.href,
                 "snippet": result.body,
                 "text": combined,
+                "code_confirmed": code_confirmed,
+                "page_available": page_available,
+                "source_note": source_note,
             }
         )
+
+        if len(sources) >= max_sources:
+            break
 
     return sources

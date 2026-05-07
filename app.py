@@ -13,86 +13,169 @@ st.set_page_config(page_title="Поиск характеристик обору�
 
 st.markdown("""
 <style>
+    :root {
+        --bg-light: #eaf8ff;
+        --bg-lighter: #f4fbff;
+        --bg-blue: #c7e7ff;
+        --bg-cornflower: #b8d4ff;
+        --text-dark: #07345f;
+        --text-main: #0a3a78;
+        --text-muted: #1f5f99;
+        --button-bg: #ffb8b8;
+        --button-bg-hover: #ffa6a6;
+        --button-border: #ff8989;
+    }
+
     .stApp {
-        background: linear-gradient(135deg, #dff6ff 0%, #c7e7ff 45%, #b6ccff 100%);
-        color: #0b3d91;
+        background: linear-gradient(135deg, #eaf8ff 0%, #d5efff 45%, #c7dcff 100%);
+        color: var(--text-dark) !important;
     }
-    h1, h2, h3, h4, h5, h6, p, label, span, div {
-        color: #0b3d91;
+
+    html, body, [class*="css"], [data-testid="stAppViewContainer"],
+    h1, h2, h3, h4, h5, h6, p, label, span, div,
+    .stMarkdown, .stMarkdown p, .stCaptionContainer, .st-emotion-cache-1v0mbdj,
+    [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] * {
+        color: var(--text-dark) !important;
     }
+
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #c2e9fb 0%, #a1c4fd 100%);
+        background: linear-gradient(180deg, #d8f2ff 0%, #c8dcff 100%);
+        color: var(--text-dark) !important;
     }
+
+    [data-testid="stSidebar"] * {
+        color: var(--text-dark) !important;
+    }
+
     [data-testid="stHeader"] {
-        background: rgba(223, 246, 255, 0.75);
+        background: rgba(234, 248, 255, 0.9);
     }
-    .stTextInput input, .stSelectbox div[data-baseweb="select"], textarea {
-        background-color: #eaf8ff !important;
-        color: #ffffff !important;
-        border: 1px solid #c9ecff !important;
+
+    .stTextInput input,
+    textarea,
+    .stSelectbox div[data-baseweb="select"],
+    .stSelectbox [data-baseweb="select"] > div,
+    .stSlider,
+    [data-testid="stNumberInput"] input {
+        background-color: var(--bg-lighter) !important;
+        color: var(--text-dark) !important;
+        caret-color: var(--text-dark) !important;
+        border: 1px solid #a8d7ff !important;
         border-radius: 10px !important;
     }
-    .stTextInput input::placeholder, textarea::placeholder {
-        color: rgba(255, 255, 255, 0.78) !important;
+
+    .stTextInput input::placeholder,
+    textarea::placeholder,
+    input::placeholder {
+        color: #4d79a8 !important;
+        opacity: 1 !important;
     }
+
     .stSelectbox div[data-baseweb="select"] span,
-    .stSelectbox div[data-baseweb="select"] div {
-        color: #ffffff !important;
+    .stSelectbox div[data-baseweb="select"] div,
+    .stSelectbox [data-baseweb="select"] span,
+    .stSelectbox [data-baseweb="select"] svg,
+    [data-baseweb="popover"] *,
+    [role="listbox"] *,
+    [role="option"] * {
+        color: var(--text-dark) !important;
     }
-    .stSlider {
-        color: #0b3d91;
+
+    [data-baseweb="popover"],
+    [role="listbox"],
+    [role="option"] {
+        background-color: var(--bg-lighter) !important;
+        color: var(--text-dark) !important;
     }
-    .stButton > button, .stDownloadButton > button {
-        background-color: #ffb3b3;
-        color: #073b7a;
-        border: 1px solid #ff8f8f;
-        border-radius: 10px;
-        font-weight: 700;
+
+    .stButton > button,
+    .stDownloadButton > button,
+    button[kind="primary"],
+    button[kind="secondary"] {
+        background-color: var(--button-bg) !important;
+        color: var(--text-dark) !important;
+        border: 1px solid var(--button-border) !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
     }
-    .stButton > button:hover, .stDownloadButton > button:hover {
-        background-color: #ff9f9f;
-        color: #002f6c;
-        border-color: #ff7f7f;
+
+    .stButton > button:hover,
+    .stDownloadButton > button:hover,
+    button[kind="primary"]:hover,
+    button[kind="secondary"]:hover {
+        background-color: var(--button-bg-hover) !important;
+        color: var(--text-dark) !important;
+        border-color: #ff7777 !important;
     }
-    div[data-testid="stDataFrame"], .result-table-wrap {
-        background-color: rgba(255, 255, 255, 0.72);
+
+    .stButton > button *,
+    .stDownloadButton > button *,
+    button * {
+        color: var(--text-dark) !important;
+    }
+
+    div[data-testid="stDataFrame"],
+    div[data-testid="stDataFrame"] *,
+    .result-table-wrap {
+        background-color: rgba(244, 251, 255, 0.9);
+        color: var(--text-dark) !important;
         border-radius: 12px;
         padding: 8px;
     }
+
     .result-table {
         width: 100%;
         border-collapse: collapse;
-        color: #0b3d91;
+        color: var(--text-dark) !important;
         font-size: 0.94rem;
+        background-color: var(--bg-lighter);
     }
+
     .result-table th {
-        background-color: #c7e7ff;
-        color: #073b7a;
+        background-color: var(--bg-blue);
+        color: var(--text-dark) !important;
         text-align: left;
         padding: 8px;
-        border: 1px solid #9fd3ff;
+        border: 1px solid #90c9f5;
     }
+
     .result-table td {
         padding: 8px;
-        border: 1px solid #b9dfff;
-        background-color: rgba(234, 248, 255, 0.9);
-        color: #0b3d91;
+        border: 1px solid #acd8fb;
+        background-color: rgba(244, 251, 255, 0.95);
+        color: var(--text-dark) !important;
     }
-    .result-table a {
-        color: #2f7ed8;
+
+    .result-table a,
+    a,
+    a:visited {
+        color: #064f9f !important;
         font-weight: 700;
         text-decoration: underline;
     }
+
     .main-title-small {
         font-size: 1.55rem;
         font-weight: 700;
-        color: #084c9e;
+        color: var(--text-dark) !important;
         margin-bottom: 0.25rem;
     }
+
     .subtitle-blue {
         font-size: 1rem;
-        color: #2f7ed8;
+        color: var(--text-muted) !important;
         margin-bottom: 1.2rem;
+    }
+
+    .stAlert,
+    .stAlert *,
+    [data-testid="stAlert"],
+    [data-testid="stAlert"] *,
+    [data-testid="stStatusWidget"],
+    [data-testid="stStatusWidget"] *,
+    [data-testid="stExpander"],
+    [data-testid="stExpander"] * {
+        color: var(--text-dark) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -186,10 +269,11 @@ if run:
 
         if not sources:
             status.update(label="Источники не найдены", state="error")
-            st.warning("Не удалось найти доступные источники. Попробуйте выбрать другой поисковик, убрать лишние слова из классификации или проверить код модели.")
+            st.warning("Поисковик не вернул доступных ссылок. Попробуйте другой поисковик или более короткий запрос: только Класс + Код модели.")
             st.stop()
 
-        st.write(f"2. Открыто и отобрано источников, где найден код модели: {len(sources)}.")
+        confirmed_count = sum(1 for source in sources if source.get("code_confirmed"))
+        st.write(f"2. Найдено источников для анализа: {len(sources)}. Подтверждено наличие кода модели в доступном тексте: {confirmed_count}.")
         st.write(f"3. Последовательно извлекаю характеристики по каждому источнику через нейросеть: {selected_model}.")
 
         hf_token = st.secrets.get("HF_TOKEN", None) if hasattr(st, "secrets") else None
